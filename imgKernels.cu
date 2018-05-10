@@ -16,7 +16,8 @@ namespace bcvgpu
         if(x >= width) return;
         
         uchar * pixel = srcData + blockIdx.y * srcStep + x * 3;
-        dstData[blockIdx.y * dstStep + x] = ((short)pixel[0] + pixel[1] + pixel[2]) / 3;
+        //NTSC luma coefficients
+        dstData[blockIdx.y * dstStep + x] = (0.299 * pixel[0] + 0.587 * pixel[1] + 0.114 * pixel[2]);
     }
     
     void cvtGreyscale(cv::gpu::GpuMat& src, cv::gpu::GpuMat& dst)
