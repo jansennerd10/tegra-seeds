@@ -52,7 +52,7 @@ namespace bcvgpu
         }
         __syncthreads();
         
-        int sum = 0;
+        long sum = 0;
         int pCount = 0;
         int ave;
         int i;
