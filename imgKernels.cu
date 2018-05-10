@@ -1,3 +1,9 @@
+#define DEBUG
+
+#ifdef DEBUG
+#include <stdio.h>
+#endif
+
 #include "imgKernels.h"
 
 #define THREADS_PER_BLOCK 256 //has to be a power of 2
@@ -28,41 +34,86 @@ namespace bcvgpu
         cvtGreyscaleKernel<<<numBlocks, THREADS_PER_BLOCK>>>(src.data, dst.data, src.size().width, src.size().height, src.step, dst.step);
     }
     
-    __global__ void calcSumKernel(int * values, int n, long * out)
+    /**
+     * Only works in a single-block configuration!!!
+     * This is OK because we would only want to use this kernel on an array of size 256.
+     */
+    __global__ void calcThresholdKernel(int * histData, int * weighted, int length, int * threshold)
     {
-        __shared__ long workingArray[THREADS_PER_BLOCK];
-        int split = THREADS_PER_BLOCK / 2; //THREADS_PER_BLOCK has to be a power of 2, so this is OK
+        __shared__ int minDiff;
+        int thresh = blockIdx.x * blockDim.x + threadIdx.x;
+        if(thresh >= length) return;
         
-        int i = blockIdx.x * blockDim.x + threadIdx.x;
-        if(i >= n) return;
-        
-        workingArray[threadIdx.x] = values[i];
+        weighted[thresh] = histData[thresh] * thresh;
+        if(thresh == 0)
+        {
+            minDiff = 256;
+        }
         __syncthreads();
         
-        while(split > 0)
-        {
-            if(threadIdx.x < split || i < n - THREADS_PER_BLOCK + split) return;
-            workingArray[threadIdx.x] += workingArray[threadIdx.x + split];
-            split >>= 1;
-            _syncthreads();
-        }
+        int sum = 0;
+        int pCount = 0;
+        int ave;
+        int i;
         
-        atomicAdd(out, workingArray[0]);
+        //FUTURE OPTIMIZATION: Compute low and high averages at the same time?
+        for(i = 0; i < thresh + 1; i++)
+        {
+            sum += weighted[i];
+            pCount += histData[i];
+        }
+        ave = sum / pCount;
+        
+        sum = 0;
+        pCount = 0;
+        for(; i < length; i++)
+        {
+            sum += weighted[i];
+            pCount += histData[i];
+        }
+        ave = (ave + sum / pCount) / 2 + 1;
+        
+        ave = __sad(ave, thresh, 0); // __sad(x, y, z) computes |x-y|+z; there is no abs() function in CUDA
+        
+        if(ave < minDiff)
+        {
+            int old = atomicMin(&minDiff, ave);
+            if(old < ave) return;
+        }
+        else
+        {
+            return;
+        }
+        __syncthreads();
+        
+        //This last step is non-deterministic if we had more than one threshold candidate with the same diff score.
+        //However, in this case all candidates are considered equally good, so we don't care which one eventually gets used.
+        if(ave == minDiff) *threshold = thresh;
     }
     
-    __global__ void calcWeightedVectorKernel(int * inValues, int * outValues, int n)
-    {
-        int i = blockIdx.x * blockDim.x + threadIdx.x;
-        if(i < n)
-        {
-            outValues[i] = i * inValues;
-        }
-    }
     
-    uchar calcThreshold(cv::gpu::GpuMat& hist)
+    double calcThreshold(cv::gpu::GpuMat& hist)
     {
-        cv::gpu::GpuMat weightedHist;
-        weightedHist.create(hist.size(), hist.type());
+        int * weighted;
+        cudaMalloc((void **) &weighted, sizeof(int) * 256);
+        int * threshold;
+        cudaMalloc((void **) &threshold, sizeof(int));
+        int host_threshold;
+        calcThresholdKernel<<<1, 256>>>((int *)hist.data, weighted, 256, threshold);
         
+        cudaMemcpy(&host_threshold, threshold, sizeof(int), cudaMemcpyDeviceToHost);
         
+        #ifdef DEBUG
+        int * localWeighted = new int[256];
+        cudaMemcpy(localWeighted, weighted, sizeof(int) * 256, cudaMemcpyDeviceToHost);
+        for(int i = 0; i < 256; i++)
+        {
+            printf("%d, ", localWeighted[i]);
+        }
+        printf("\n");
+        printf("%s\n", cudaGetErrorName(cudaGetLastError()));
+        #endif
+        
+        return (double)host_threshold;
+    }
 }

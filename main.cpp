@@ -16,11 +16,23 @@ int main(int argc, char * argv[])
     
     std::cout << "Read the image. Matrix size is (" << image.size().width << ", " << image.size().height << ") with " << image.channels() << " channels." << std::endl;
     
-    cv::gpu::GpuMat gpuImg, gpuGrey, gpuHist;
+    cv::gpu::GpuMat gpuImg, gpuGrey, gpuHist, gpuBinary;
     gpuImg.upload(image);
     
     std::cout << "Copied image to GPGPU memory." << std::endl;
     
     bcvgpu::cvtGreyscale(gpuImg, gpuGrey);
+    
+    std::cout << "Converted to grayscale." << std::endl;
+    
     cv::gpu::calcHist(gpuGrey, gpuHist);
+    
+    std::cout << "Calculated histogram." << std::endl;
+    
+    double threshold = bcvgpu::calcThreshold(gpuHist);
+    std::cout << "Threshold is " << threshold << std::endl;
+    
+    cv::gpu::threshold(gpuGrey, gpuBinary, threshold, 255, cv::THRESH_BINARY);
+    gpuBinary.download(image);
+    cv::imwrite("sample_binary.jpg", image);
 }
