@@ -173,6 +173,10 @@ namespace bcvgpu
                 }
             }
             #ifdef DEBUG
+            if(didAdd)
+            {
+                printf("At row %d, added without subtracting\n", row);
+            }
             didAdd = false;
             #endif
         }

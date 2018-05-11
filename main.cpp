@@ -46,7 +46,7 @@ int main(int argc, char * argv[])
     gpuBinary.download(image);
     cv::imwrite("sample_binary.png", image);
     
-    cv::gpu::dilate(gpuBinary, gpuDilated, cv::Mat());
+    cv::gpu::dilate(gpuBinary, gpuDilated, cv::Mat::ones(4, 4, CV_8UC1));
     gpuDilated.download(image);
     cv::imwrite("sample_dilated.png", image);
     
