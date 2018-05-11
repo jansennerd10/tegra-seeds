@@ -9,6 +9,10 @@ The following libraries are required:
 * CUDA Toolkit
 * OpenCV 2.4 (note that OpenCV 3 has breaking changes that will required updates to the code).
 
+This application was written to be built on Linux. nvcc (the compiler used to build the project) is available for Windows;
+however, it has not been tested with this project. Modifications to the host code would probably be necessary, but the GPU
+code would likely be compatible out of the box.
+
 # File Information
 * imgKernels.cu: Contains CUDA kernels (GPU functions) that help calculate the number of seeds in an image, as well as the host functions
 that invoke the kernels.
