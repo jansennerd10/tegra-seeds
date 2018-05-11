@@ -9,6 +9,7 @@ namespace bcvgpu
 {
     void cvtGreyscale(cv::gpu::GpuMat& src, cv::gpu::GpuMat& dst);
     double calcThreshold(cv::gpu::GpuMat& hist);
+    int countSeeds(cv::gpu::GpuMat& binImg);
 }
 
 #endif

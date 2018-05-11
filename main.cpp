@@ -2,21 +2,31 @@
 #include <opencv2/gpu/gpu.hpp>
 #include <iostream>
 #include "imgKernels.h"
+#include <sys/time.h>
+
+#define usec(tv) (tv.tv_sec * 1000000 + tv.tv_usec)
 
 int main(int argc, char * argv[])
 {
+    struct timeval begin, end, diff;
     cv::Mat image, hist;
-    image = cv::imread("sample.jpg", CV_LOAD_IMAGE_COLOR);
+    
+    if(argc != 2)
+    {
+        std::cout << "Usage: main <filename>" << std::endl;
+        return -1;
+    }
+    image = cv::imread(argv[1], CV_LOAD_IMAGE_COLOR);
     
     if(!image.data)
     {
-        std::cout << "Could not open or find the image." << std::endl;
+        std::cout << "Could not open or find the image '" << argv[1] << "'." << std::endl;
         return -1;
     }
     
     std::cout << "Read the image. Matrix size is (" << image.size().width << ", " << image.size().height << ") with " << image.channels() << " channels." << std::endl;
     
-    cv::gpu::GpuMat gpuImg, gpuGrey, gpuHist, gpuBinary;
+    cv::gpu::GpuMat gpuImg, gpuGrey, gpuHist, gpuBinary, gpuDilated;
     gpuImg.upload(image);
     
     std::cout << "Copied image to GPGPU memory." << std::endl;
@@ -34,5 +44,11 @@ int main(int argc, char * argv[])
     
     cv::gpu::threshold(gpuGrey, gpuBinary, threshold, 255, cv::THRESH_BINARY);
     gpuBinary.download(image);
-    cv::imwrite("sample_binary.jpg", image);
+    cv::imwrite("sample_binary.png", image);
+    
+    cv::gpu::dilate(gpuBinary, gpuDilated, cv::Mat());
+    gpuDilated.download(image);
+    cv::imwrite("sample_dilated.png", image);
+    
+    std::cout << "Seeds: " << bcvgpu::countSeeds(gpuDilated) << std::endl;
 }

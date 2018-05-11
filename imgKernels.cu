@@ -92,7 +92,6 @@ namespace bcvgpu
         if(ave == minDiff) *threshold = thresh;
     }
     
-    
     double calcThreshold(cv::gpu::GpuMat& hist)
     {
         int * weighted;
@@ -116,5 +115,81 @@ namespace bcvgpu
         #endif
         
         return (double)host_threshold;
+    }
+    
+    __global__ void countContiguousKernel(uchar * img, int * totalCount, int width, int height, int step, int chunkWidth, int chunkHeight)
+    {
+        int hOffset = chunkWidth * threadIdx.x;
+        int vOffset = chunkHeight * blockIdx.x;
+        
+        int row, col;
+        int seedCount = 0;
+        uchar pixel, lastPixel, shoulderPixel, lastShoulder;
+        #ifdef DEBUG
+        bool didAdd = false;
+        #endif
+        for(row = vOffset; row < height && row < vOffset + chunkHeight; row++)
+        {
+            //Get the pixel and shoulder immediately to the left of our chunk, if applicable.
+            //This will prevent us from double counting seeds that cross chunk borders.
+            pixel = hOffset == 0 ? 255 : img[row * step + hOffset - 1];
+            shoulderPixel = (row == 0 || hOffset == 0) ? 255 : img[(row - 1) * step + hOffset - 1];
+            for(col = hOffset; col < width && col < hOffset + chunkWidth; col++)
+            {
+                lastPixel = pixel;
+                lastShoulder = shoulderPixel;
+                pixel = img[row * step + col];
+                shoulderPixel = row == 0 ? 255 : img[(row - 1) * step + col];
+                
+                //FOR EACH PIXEL:
+                //If it's white, do nothing.
+                if(pixel == 255) continue;
+                
+                //Otherwise, if it's the first black pixel in a segment of black pixels,
+                //greedily assume the segment is part of a new seed.
+                if(lastPixel == 255)
+                {
+                    #ifdef DEBUG
+                    didAdd = true;
+                    #endif
+                    seedCount++;
+                }
+
+                //If we encounter a black pixel over the shoulder, then our previous greedy assumption was wrong.
+                //We decrement for every new segment of black pixels over the shoulder, to account for the horseshoe case
+                //(and the positive-slope left boundary case).
+                //The algorithm will be incorrect for the donut case, but we donut care about that because - worst case -
+                //we will count the seed twice, and 99.9% of seeds do not look like donuts.
+                if(shoulderPixel == 0 && (lastPixel == 255 || shoulderPixel != lastShoulder))
+                {
+                    seedCount--;
+                    #ifdef DEBUG
+                    if(!didAdd)
+                    {
+                        printf("Thread %d in block %d at img[%d][%d] subtracted under suspicious circumstances.\n", threadIdx.x, blockIdx.x, row, col);
+                    }
+                    didAdd = false;
+                    #endif
+                }
+            }
+            #ifdef DEBUG
+            didAdd = false;
+            #endif
+        }
+        
+        atomicAdd(totalCount, seedCount);
+    }
+    
+    int countSeeds(cv::gpu::GpuMat& binImg)
+    {
+        int * seeds;
+        int host_seeds;
+        cudaMalloc(&seeds, sizeof(int));
+        cudaMemset(seeds, 0, sizeof(int));
+        dim3 threadsPerBlock((binImg.size().width + 255) / 256);
+        dim3 numBlocks((binImg.size().height + 255) / 256);
+        countContiguousKernel<<<numBlocks, threadsPerBlock>>>(binImg.data, seeds, binImg.size().width, binImg.size().height, binImg.step, 256, 256);
+        cudaMemcpy(&host_seeds, seeds, sizeof(int), cudaMemcpyDeviceToHost);
+        return host_seeds;
     }
 }
